@@ -1,0 +1,503 @@
+---
+title: |-
+  570 2021 Advanced Regression Modeling 
+  R Notes: ``INLA`` and ``Stan`` 
+author: |
+  | Jon Wakefield
+  | Departments of Statistics and Biostatistics, University of Washington
+date: '`r Sys.Date()`'
+output:
+  beamer_presentation:
+    theme: "AnnArbor"
+    colortheme: "dolphin"
+    keep_tex: yes
+  slidy_presentation: default
+linkcolor: blue
+hitheme: agate
+highlighter: highlight.js
+---
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(knitr)
+opts_chunk$set(collapse=TRUE, fig.align='center', tidy=TRUE, tidy.opts=list(blank=TRUE, width.cutoff=40), warning=FALSE,message=FALSE,cache=TRUE)
+```
+
+## Overview
+
+In this set of notes a number of generalized linear models (GLMs) and generalized linear mixed models (GLMMs) will be fitted using Bayesian methods.
+
+Two primary computational techniques will be illustrated:
+
+-- The integrated nested Laplace approximation (INLA) method using ``INLA``
+
+-- Markov chain Monte Carlo (MCMC) using ``Stan``
+
+## Linear Model Example
+
+We consider a linear model example with the response $Y$ being weight and two covariates:
+
+* fto heterozygote, $x_g \in \{ 0,1 \}$
+
+* age in weeks $x_a \in \{1,2,3,4,5\}$ 
+
+We will examine the fit of the model 
+$$E[Y|x_{\tiny{\mbox{g}}},x_{\tiny{\mbox{a}}}]=\beta_0+\beta_{\tiny{\mbox{g}}} x_g + \beta_{\tiny{\mbox{a}}} x_a + \beta_{\tiny{\mbox{int}}} 
+x_{\tiny{\mbox{g}}}  x_{\tiny{\mbox{a}}},$$
+with independent normal errors, 
+and compare with a Bayesian analysis.
+
+## Linear Model Example: Data
+
+We first obtain the least squares analysis of the FTO data.
+
+The ``lm`` function uses MLE, which is equivalent to ordinary least squares.
+
+\vspace{.2in}
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+load(url("http://faculty.washington.edu/kenrice/sisgbayes/yX_FTO.Rdata"))
+liny <- yX$y
+linxg <- yX$X[,"xg"]
+linxa <- yX$X[,"xa"]
+linxint <- yX$X[,"xg"]*yX$X[,"xa"]
+ftodf <- list(liny=liny,linxg=linxg,linxa=linxa,linxint=linxint)
+```
+
+## Linear Model Example: Data
+
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.height=3.2,fig.width=4.0}
+plot(liny~linxa,col=as.factor(linxg))
+legend("bottomright",legend=c("xg=0","xg=1"),col=1:2,pch=1,bty="n")
+```
+
+
+## Linear Model Example: LS fit
+
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+ols.fit <- lm(liny~linxg+linxa+linxint,data=ftodf)
+summary(ols.fit)
+```
+
+## INLA
+
+Integrated nested Laplace approximation (INLA) is a technique for carrying out Bayesian computation.
+
+It is not a standard ``R`` package and must be downloaded from the development website.
+
+The ``inla`` function is the work horse.
+\vspace{.2in}
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+#install.packages("INLA", repos="http://www.math.ntnu.no/inla/R/stable")
+library(INLA)
+#
+# Data should be input to INLA as either a list or a dataframe
+#
+formula <- liny~linxg+linxa+linxint
+lin.mod <- inla(formula,data=ftodf,family="gaussian")
+```
+\vspace{.05in}
+\normalsize
+We might wonder, where are the priors? We didn't specify any...but INLA has default choices.
+
+## Linear Model example: Lots of output available!
+
+\tiny
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+names(lin.mod)
+```
+
+## FTO example: INLA analysis
+
+The posterior means and posterior standard deviations are in very close agreement with the OLS fits presented earlier.
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+coef(ols.fit)
+sqrt(diag(vcov(ols.fit)))
+lin.mod$summary.fixed
+```
+
+## Linear Model example: INLA analysis
+
+Posterior univariate marginal summaries:
+\vspace{.2in}
+
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+lin.mod$summary.fixed[1:5]
+```
+
+\vspace{.2in}
+\normalsize
+The posterior means and standard deviations are in very close agreement with the OLS fits presented earlier.
+
+## Linear Model Posterior marginals
+
+We now examine the posterior marginal distributions.
+
+The posterior marginal distribution for the vector of regression coefficients (including the intercept)  is given below.
+\vspace{.2in}
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=4.2,fig.width=5.0, tidy.opts=list(width.cutoff=50),echo=TRUE,fig.show="hide"}
+par(mfrow=c(2,2))
+plot(lin.mod$marginals.fixed$`(Intercept)`[,2]~lin.mod$marginals.fixed$`(Intercept)`[,1],xlab=expression(beta[0]),ylab="Posterior Density",type="l",col="blue",xlim=c(-6,6),main="Intercept")
+plot(lin.mod$marginals.fixed$`linxg`[,2]~lin.mod$marginals.fixed$`linxg`[,1],xlab=expression(beta[1]),ylab="Posterior Density",type="l",col="blue",main="Genotype")
+plot(lin.mod$marginals.fixed$`linxa`[,2]~lin.mod$marginals.fixed$`linxa`[,1],xlab=expression(beta[2]),ylab="Posterior Density",type="l",col="blue",main="Age")
+plot(lin.mod$marginals.fixed$`linxint`[,2]~lin.mod$marginals.fixed$`linxint`[,1],xlab=expression(beta[3]),ylab="Posterior Density",type="l",col="blue",main="Interaction")
+```
+
+##
+
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=4.2,fig.width=5.0, tidy.opts=list(width.cutoff=50),echo=FALSE}
+par(mfrow=c(2,2))
+plot(lin.mod$marginals.fixed$`(Intercept)`[,2]~lin.mod$marginals.fixed$`(Intercept)`[,1],xlab=expression(beta[0]),ylab="Posterior Density",type="l",col="blue",xlim=c(-6,6),main="Intercept")
+plot(lin.mod$marginals.fixed$`linxg`[,2]~lin.mod$marginals.fixed$`linxg`[,1],xlab=expression(beta[1]),ylab="Posterior Density",type="l",col="blue",main="Genotype")
+plot(lin.mod$marginals.fixed$`linxa`[,2]~lin.mod$marginals.fixed$`linxa`[,1],xlab=expression(beta[2]),ylab="Posterior Density",type="l",col="blue",main="Age")
+plot(lin.mod$marginals.fixed$`linxint`[,2]~lin.mod$marginals.fixed$`linxint`[,1],xlab=expression(beta[3]),ylab="Posterior Density",type="l",col="blue",main="Interaction")
+```
+
+## Linear Model example via INLA
+
+In order to carry out model checking we rerun the analysis, but now 
+switch on a flag to obtain fitted values.
+
+\vspace{.2in}
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+ lin.mod <- inla(liny~linxg+linxa+linxint,data=ftodf,
+      family="gaussian",control.predictor=list(compute=TRUE))
+fitted <- lin.mod$summary.fitted.values[,1]
+#
+# Now extract the posterior median of the measurement error sd
+sigmamed <- 1/sqrt(lin.mod$summary.hyperpar[,4]) 
+```
+
+## FTO: Residual analysis
+
+With the fitted values we can examine the fit of the model. In particular:
+
+- Normality of the errors (sample size is relatively small).
+
+- Errors have constant variance (and are uncorrelated).
+
+
+
+## Linear Model Residual analysis
+
+The code below forms residuals and then forms
+
+- a QQ plot to assess normality, 
+- a plot of residuals versus age, to assess linearity, 
+- a plot of residuals versus fitted values, to see if an unmodeled mean-variance relationship) and 
+- a plot of fitted versus observed for an overall assessment of fit.
+
+
+## Linear Model: Residual analysis
+
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+residuals <- (liny-fitted)/sigmamed
+par(mfrow=c(2,2),mar = c(4, 4, 0.1, 0.1))
+qqnorm(residuals,main="",xlab="Theoretical",ylab="Sample")
+abline(0,1,lty=2,col="red")
+plot(residuals~linxa,ylab="Resids",xlab="Age")
+abline(h=0,lty=2,col="red")
+plot(residuals~fitted,ylab="Resids",xlab="Fitted")
+abline(h=0,lty=2,col="red")
+plot(fitted~liny,xlab="Observed",ylab="Fitted")
+abline(0,1,lty=2,col="red")
+```
+
+\normalsize
+The model assumptions do not appear to be greatly invalidated here.
+
+## 
+
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=3.5,fig.width=3.5, tidy.opts=list(width.cutoff=50),echo=FALSE}
+residuals <- (liny-fitted)/sigmamed
+par(mfrow=c(2,2),mar = c(4, 4, 0.1, 0.1))
+qqnorm(residuals,main="",xlab="Theoretical",ylab="Sample")
+abline(0,1,lty=2,col="red")
+plot(residuals~linxa,ylab="Resids",xlab="Age")
+abline(h=0,lty=2,col="red")
+plot(residuals~fitted,ylab="Resids",xlab="Fitted")
+abline(h=0,lty=2,col="red")
+plot(fitted~liny,xlab="Observed",ylab="Fitted")
+abline(0,1,lty=2,col="red")
+```
+
+
+## Case Control Example: Data
+
+We analyze a case control example using logistic regression models, first using likelihood methods.
+
+The case-control data are for the disease Leber Hereditary
+  Optic Neuropathy (LHON) disease with genotype data for marker
+  rs6767450:
+
+\begin{center}
+\begin{tabular}{l|ccc|c}
+&CC&CT&TT&Total\\ 
+&$x=0$&$x=1$&$x=2$&\\ \hline
+Cases&6&8&75&89\\
+Controls&10&66&163&239\\ \hline
+Total&16&74&238&328
+\end{tabular}
+\end{center}
+
+Let $x=0,1,2$ represent the number of T alleles, and \textcolor{red}{$p(x)$} the
+  probability of being a case, given $x$ copies of the $T$ allele.
+
+## Case Control Example
+
+For such case-control data one may fit the \textcolor{red}{multiplicative odds model}:
+$$\frac{p(x)}{1-p(x)} = \exp(\alpha) \times \exp(\theta x),$$
+with a \textcolor{blue}{binomial likelihood}.
+
+
+\textcolor{brown}{Interpretation:}
+
+-- \textcolor{blue}{$\exp(\alpha)$} is of little interest given the case-control sampling.
+
+
+--  \textcolor{blue}{$\exp(\theta)$} is the odds ratio describing the \textcolor{red}{multiplicative change in risk} for one T allele versus zero T alleles.
+
+-- \textcolor{blue}{$\exp(2\theta)$} is the odds ratio describing the \textcolor{red}{multiplicative change in risk} for two T alleles versus zero T alleles.
+
+-- Odds ratios approximate the \textcolor{blue}{relative risk} for
+  a rare disease.   
+
+A Bayesian analysis adds a prior on $\alpha$ and $\theta$.
+
+## Case contol example
+
+\small
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50)}
+x <- c(0,1,2)
+# Case data for CC CT TT
+y <- c(6,8,75)
+# Control data for CC CT TT
+z <- c(10,66,163)
+```
+
+## Case control example: Likelihood analysis
+
+We fit the logistic regression model as a generalized linear model and then examine the estimate and an asymptotic (large sample) 95\% confidence interval.
+\vspace{.2in}
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50)}
+logitmod <- glm(cbind(y,z)~x,family="binomial")
+thetahat <- logitmod$coeff[2]           # Log odds ratio
+thetahat
+exp(thetahat) # Odds ratio              # standard error^2
+exp(confint(logitmod))
+```
+
+
+## Case control example: Likelihood analysis
+
+Now let's look at a likelihood ratio test of $H_0: \theta=0$ where $\theta$ is the log odds ratio associated with the genotype (multiplicative model).
+
+\vspace{.2in}
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=3.2,fig.width=3.5, tidy.opts=list(width.cutoff=50)}
+dev <- logitmod$null.deviance-logitmod$deviance
+dev
+pchisq(dev,df=logitmod$df.residual,lower.tail=F)
+```
+
+\vspace{.1in}
+\small
+So just significant at the 5% level.
+
+
+
+
+## Case-Control Example: INLA Analysis
+
+We perform two analyses.
+
+The first analysis uses the default priors in INLA (which are relatively flat).
+\vspace{.2in}
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+x <- c(0,1,2)
+y <- c(6,8,75)
+z <- c(10,66,163)
+cc.dat <- as.data.frame(rbind(y,z,x))
+cc.mod <- inla(y~x,family="binomial",data=cc.dat,Ntrials=y+z)
+cc.mod$summary.fixed[,1:5]
+```
+
+## Prior choice
+
+
+Suppose that for the odds ratio $\mbox{e}^{\beta}$ we believe there is a 50\% chance that the
+odds ratio is less than 1 and a 95\% chance that it is less than 5;
+with $q_1=0.5,\theta_1=1.0$ and $q_2=0.95,\theta_2=5.0$,
+we obtain lognormal parameters $\mu=0$ and $\sigma=(\log 5)/1.645=0.98$.
+
+There is a function in the ``SpatialEpi`` package to
+find the parameters, as we illustrate.
+
+\vspace{.2in}
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50)}
+library(SpatialEpi)
+lnprior <- LogNormalPriorCh(1,5,0.5,0.95)
+lnprior
+```
+
+## Prior choice
+
+
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.height=3.2,fig.width=3.5}
+plot(seq(0,7,.1),dlnorm(seq(0,7,.1),meanlog=lnprior$mu,
+ sdlog=lnprior$sigma),type="l",xlab="x",ylab="LogNormal Density")
+```
+
+
+## Case-Control Example: INLA
+
+Now with informative priors.
+\vspace{.2in}
+\scriptsize
+```{r, message=FALSE, collapse=TRUE, tidy=TRUE,tidy.opts=list(width.cutoff=50),fig.show='hide'}
+W <- LogNormalPriorCh(1,1.5,0.5,0.975)$sigma^2
+cc.mod2 <- inla(y~x,family="binomial",data=cc.dat,Ntrials=y+z,
+   control.fixed=list(mean.intercept=c(0),prec.intercept=c(.1),
+                      mean=c(0),prec=c(1/W)))
+cc.mod2$summary.fixed[,1:5]
+```
+
+\vspace{.1in}
+\normalsize
+The quantiles for $\theta$ can be translated to odds ratios by exponentiating.
+
+
+## Case-Control Example: Stan Analysis
+
+Analysis with default priors: uses code in file ``LogisticExample.stan``
+
+\begin{scriptsize}
+\begin{verbatim}
+/*
+ * Logistic regresssion example
+ */
+data {
+	int y[3];
+	int n[3];
+	int x[3];
+}
+parameters {
+	real beta0;
+	real beta1;
+}
+model {
+for (i in 1:3)
+	y[i] ~ binomial(n[i],inv_logit(beta0+beta1*x[i]));
+}
+\end{verbatim}
+\end{scriptsize}
+
+## Case-Control Example: Stan Analysis
+
+\vspace{.2in}
+\scriptsize
+```{r, results="hide", cache.extra = tools::md5sum("LogisticExample.stan"), message=FALSE} 
+library(rstan)
+stanlogist <- stan("LogisticExample.stan",data = list(x=c(0,1,2),y=c(6,8,75),n=c(16,74,238)),iter = 1000, chains = 3, seed=1234)
+```
+
+## Case-Control Example: Stan Analysis
+
+Close agreement with INLA analysis
+\vspace{.2in}
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=3.5,fig.width=4.5, tidy.opts=list(width.cutoff=50),echo=TRUE} 
+summary(stanlogist)$summary
+```
+
+## Case-Control Example: Stan Analysis
+
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=2.5,fig.width=4.5, tidy.opts=list(width.cutoff=50),echo=TRUE} 
+traceplot(stanlogist, pars = c("beta1"), inc_warmup = TRUE) 
+```
+
+## Case-Control Example: Stan Analysis
+
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=2.5,fig.width=4.5, tidy.opts=list(width.cutoff=50),echo=TRUE} 
+plot(stanlogist,color="green")
+```
+
+
+## Case-Control Example: Stan Analysis 
+
+Analysis with informative prior: ``LogisticExamplePriors.stan``
+
+\begin{scriptsize}
+\begin{verbatim}
+data {
+	int y[3];
+	int n[3];
+	int x[3];
+}
+parameters {
+	real beta0;
+	real beta1;
+}
+transformed parameters {
+	real<lower=0> theta;
+	theta = exp(beta1);
+}
+model {
+beta0 ~ normal(0,3.162278);
+beta1 ~ normal(0,0.2068738);
+for (i in 1:3)
+    y[i] ~ binomial(n[i],inv_logit(beta0+beta1*x[i]));
+}
+\end{verbatim}
+\end{scriptsize}
+
+## Case-Control Example
+
+Stan Analysis with Informative Prior
+
+\vspace{.2in}
+\scriptsize
+```{r, results="hide", cache.extra = tools::md5sum("LogisticExample.stan"),message=FALSE} 
+library(rstan)
+stanlogist2 <- stan("LogisticExamplePriors.stan",data = list(x=c(0,1,2),y=c(6,8,75),n=c(16,74,238)),iter = 1000, chains = 3, seed=2345)
+```
+
+## Case-Control Example: Stan Analysis with Informative Prior
+
+
+Again close agreement with INLA analysis
+
+\vspace{.2in}
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=3.5,fig.width=4.5, tidy.opts=list(width.cutoff=50),echo=TRUE} 
+summary(stanlogist2)$summary
+```
+
+## Case-Control Example: Stan Analysis with Informative Prior
+
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=2.5,fig.width=4.5, tidy.opts=list(width.cutoff=50),echo=TRUE} 
+plot(stanlogist2,color="green",parameter="theta")
+```
+
+## Case-Control Example: Stan Analysis with Informative Prior
+
+\scriptsize
+```{r, echo=TRUE, collapse=TRUE,fig.height=2.5,fig.width=4.5, tidy.opts=list(width.cutoff=50),echo=TRUE} 
+stan_dens(stanlogist2)
+```
+
